@@ -1,0 +1,13 @@
+{
+  "externalKey": "RFI-0001",
+  "projectCode": "P-ALPHA",
+  "projectName": "Alpha Apartments",
+  "vendorName": "ACME MEP",
+  "vendorEmail": "mep@acme.com",
+  "title": "HVAC spec clarification",
+  "status": "Open",
+  "createdAt": "2025-11-02",
+  "dueDate": "2025-11-10",
+  "priority": "High",
+  "assignee": "maria@oht.local"
+}
