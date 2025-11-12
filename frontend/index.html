@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>RFI Console (No-build React)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- React 18 UMD + Babel in-browser for JSX -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    :root { --bg:#0b1020; --panel:#131b31; --muted:#22304a; --muted2:#2b3756; --text:#e9eef8; --brand:#2d6ef7; --accent:#7a5af8; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family: Inter, system-ui, Arial, sans-serif; }
+    .wrap { max-width:1100px; margin:40px auto; padding:0 16px; }
+    .toolbar { display:flex; gap:12px; align-items:center; margin-bottom:16px; }
+    .btn { background:var(--brand); border:0; color:white; padding:10px 14px; border-radius:12px; cursor:pointer; }
+    .btn.secondary { background:var(--accent); }
+    .btn.ghost { background:var(--muted); }
+    .search { width:100%; padding:10px; border-radius:12px; border:1px solid var(--muted); background:var(--bg); color:var(--text); }
+    .table { overflow:auto; border:1px solid var(--muted); border-radius:12px; }
+    table { width:100%; border-collapse:collapse; min-width:900px; }
+    th, td { padding:10px; border-top:1px solid var(--muted); }
+    thead th { background:var(--panel); text-align:left; border-top:0; }
+    select, input[type="date"], input[type="text"], input[type="number"] {
+      padding:8px; border-radius:10px; border:1px solid var(--muted2); background:var(--bg); color:var(--text);
+    }
+    .badge { padding:4px 8px; border-radius:999px; font-size:12px; background:#22304a; color:#fff; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); display:grid; place-items:center; z-index:50; }
+    .modal { background:var(--panel); color:var(--text); padding:20px; border-radius:16px; width:520px; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    label { display:flex; flex-direction:column; gap:6px; font-size:14px; }
+    a.link { color:#9ecbff; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const API = "http://127.0.0.1:5000";
+
+    function Badge({text, kind="neutral"}) {
+      const bg = {neutral:'#22304a', warn:'#664400', danger:'#5a1a1a', ok:'#1e4d2b'}[kind] || '#22304a';
+      return <span className="badge" style={{background:bg}}>{text}</span>;
+    }
+
+    function Toolbar({ onRefresh, onCreate }) {
+      return (
+        <div className="toolbar">
+          <button className="btn" onClick={onRefresh}>Refresh</button>
+          <button className="btn secondary" onClick={onCreate}>New RFI</button>
+          <a className="btn ghost" href={`${API}/files/notifications.csv`} target="_blank" rel="noreferrer">Open Notifications CSV</a>
+        </div>
+      );
+    }
+
+    function NewModal({ open, onClose, onSubmit }) {
+      const [form, setForm] = React.useState({
+        externalKey: "", projectId: 1, title: "",
+        createdAt: new Date().toISOString().slice(0,10),
+        status: "Open", priority: "Normal"
+      });
+      React.useEffect(()=>{ if(!open){ setForm(f=>({...f, externalKey:"", title:""})); }}, [open]);
+      if(!open) return null;
+      return (
+        <div className="modal-backdrop" onClick={(e)=>{ if(e.target.classList.contains("modal-backdrop")) onClose(); }}>
+          <div className="modal">
+            <h3 style={{marginTop:0}}>Create RFI</h3>
+            <div className="grid">
+              <label>External Key <input value={form.externalKey} onChange={e=>setForm({...form, externalKey:e.target.value})}/></label>
+              <label>Project ID <input type="number" value={form.projectId} onChange={e=>setForm({...form, projectId:Number(e.target.value)})}/></label>
+              <label style={{gridColumn:"1 / span 2"}}>Title <input value={form.title} onChange={e=>setForm({...form, title:e.target.value})}/></label>
+              <label>Created At <input type="date" value={form.createdAt} onChange={e=>setForm({...form, createdAt:e.target.value})}/></label>
+              <label>Status
+                <select value={form.status} onChange={e=>setForm({...form, status:e.target.value})}>
+                  <option>Open</option><option>Pending</option><option>Closed</option>
+                </select>
+              </label>
+              <label>Priority
+                <select value={form.priority} onChange={e=>setForm({...form, priority:e.target.value})}>
+                  <option>Low</option><option>Normal</option><option>High</option><option>Critical</option>
+                </select>
+              </label>
+            </div>
+            <div style={{display:'flex', gap:10, justifyContent:'flex-end', marginTop:12}}>
+              <button className="btn" onClick={()=>onSubmit(form)}>Create</button>
+              <button className="btn ghost" onClick={onClose}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App(){
+      const [rfis, setRfis] = React.useState([]);
+      const [loading, setLoading] = React.useState(false);
+      const [filter, setFilter] = React.useState("");
+      const [showNew, setShowNew] = React.useState(false);
+
+      async function load(){
+        setLoading(true);
+        const res = await fetch(`${API}/api/rfis`);
+        const data = await res.json();
+        setRfis(data);
+        setLoading(false);
+      }
+      React.useEffect(()=>{ load(); },[]);
+
+      async function createRfi(form){
+        const res = await fetch(`${API}/api/rfis`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(form)
+        });
+        if(res.ok){ setShowNew(false); load(); } else alert('Create failed');
+      }
+
+      async function updateStatus(id, status){
+        const res = await fetch(`${API}/api/rfis/${id}`, {
+          method:'PUT',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ status })
+        });
+        if(res.ok){ load(); } else alert('Update failed');
+      }
+
+      const filtered = React.useMemo(()=>{
+        const q = filter.trim().toLowerCase();
+        if(!q) return rfis;
+        return rfis.filter(r =>
+          (r.externalKey||'').toLowerCase().includes(q) ||
+          (r.title||'').toLowerCase().includes(q) ||
+          (r.projectCode||'').toLowerCase().includes(q) ||
+          (r.status||'').toLowerCase().includes(q)
+        );
+      },[rfis, filter]);
+
+      return (
+        <div className="wrap">
+          <h1 style={{margin:'0 0 10px'}}>RFI Console</h1>
+          <p style={{marginTop:0, opacity:.8}}>No-build React UI talking to your Flask API.</p>
+
+          <Toolbar onRefresh={load} onCreate={()=>setShowNew(true)} />
+
+          <div style={{display:'flex', gap:12, marginBottom:12}}>
+            <input className="search" placeholder="Search external key / title / project / status"
+              value={filter} onChange={e=>setFilter(e.target.value)} />
+            <Badge text={`${filtered.length} RFIs`} />
+          </div>
+
+          <div className="table">
+            <table>
+              <thead>
+                <tr>{['ID','External Key','Title','Project','Status','Priority','Created','Due','Assignee','Actions'].map(h=>
+                  <th key={h}>{h}</th>
+                )}</tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan="10" style={{padding:18}}>Loading…</td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan="10" style={{padding:18, opacity:.7}}>No RFIs.</td></tr>
+                ) : filtered.map(r=>(
+                  <tr key={r.id}>
+                    <td>{r.id}</td>
+                    <td>{r.externalKey}</td>
+                    <td>{r.title}</td>
+                    <td>{r.projectCode}</td>
+                    <td>
+                      <select value={r.status} onChange={e=>updateStatus(r.id, e.target.value)}>
+                        <option>Open</option><option>Pending</option><option>Closed</option>
+                      </select>
+                    </td>
+                    <td>
+                      <Badge text={r.priority||'Normal'} kind={{
+                        'Low':'ok','Normal':'neutral','High':'warn','Critical':'danger'
+                      }[r.priority||'Normal']} />
+                    </td>
+                    <td>{r.createdAt}</td>
+                    <td>{r.dueDate || '—'}</td>
+                    <td>{r.assignee || '—'}</td>
+                    <td><a href="#" className="link" onClick={(e)=>{e.preventDefault(); alert(JSON.stringify(r,null,2))}}>View JSON</a></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <NewModal open={showNew} onClose={()=>setShowNew(false)} onSubmit={createRfi} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
